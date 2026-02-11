@@ -225,7 +225,8 @@
   <!-- Income / Credits -->
   <div class="big-section hidden" id="incomeSection">
     <h2>💰 Income / Credits</h2>
-    <div id="incomeContent"></div>
+    <div id="incomeSummary" style="margin-bottom:12px"></div>
+    <div id="incomeCatCards" class="cat-grid"></div>
   </div>
 
   <!-- Downloads -->
@@ -562,7 +563,8 @@ function renderBigSpends(threshold) {
 function renderIncome() {
   const credits = filteredTransactions.filter(t => t.type === 'credit');
   const section = document.getElementById('incomeSection');
-  const container = document.getElementById('incomeContent');
+  const summaryEl = document.getElementById('incomeSummary');
+  const cardsEl = document.getElementById('incomeCatCards');
 
   if (!credits.length) {
     section.classList.add('hidden');
@@ -572,23 +574,93 @@ function renderIncome() {
   section.classList.remove('hidden');
   const totalIncome = credits.reduce((s, t) => s + t.amount, 0);
 
-  container.innerHTML = `
-    <table class="txn-table">
-      <thead><tr><th>Date</th><th>Category</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
-      <tbody>
-        ${credits.sort((a,b) => (b.date||'').localeCompare(a.date||'')).map(t => `<tr>
-          <td>${fmtDate(t.date)}</td>
-          <td>${getIcon(t.category)} ${t.category}</td>
-          <td>${escHtml(t.description)}</td>
-          <td style="text-align:right" class="txn-credit">+£${t.amount.toLocaleString('en-GB',{minimumFractionDigits:2})}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-    <p style="margin-top:8px;font-size:0.82rem;color:var(--muted)">
+  summaryEl.innerHTML = `
+    <p style="font-size:0.85rem;color:var(--muted)">
       <strong>${credits.length}</strong> incoming transaction${credits.length!==1?'s':''} totalling
       <strong style="color:#00b894">+£${totalIncome.toLocaleString('en-GB',{minimumFractionDigits:2})}</strong>
     </p>
   `;
+
+  // Build category summary for credits
+  const map = {};
+  for (const t of credits) {
+    if (!map[t.category]) map[t.category] = { total: 0, count: 0 };
+    map[t.category].total += t.amount;
+    map[t.category].count++;
+  }
+  const creditSummary = Object.entries(map)
+    .map(([cat, v]) => ({ category: cat, total: Math.round(v.total * 100) / 100, count: v.count }))
+    .sort((a, b) => b.total - a.total);
+
+  cardsEl.innerHTML = '';
+  creditSummary.forEach((cat, idx) => {
+    const pct = totalIncome > 0 ? (cat.total / totalIncome * 100).toFixed(1) : 0;
+    const colour = PALETTE[idx % PALETTE.length];
+    const icon = getIcon(cat.category);
+    const txns = credits.filter(t => t.category === cat.category);
+    const expanded = cat.count <= 15;
+    const cardIdx = 'cr_' + idx;
+
+    const card = document.createElement('div');
+    card.className = 'cat-card';
+    card.innerHTML = `
+      <div class="cat-header">
+        <span class="cat-icon">${icon}</span>
+        <span class="cat-name">${cat.category}</span>
+        <span class="cat-amount" style="color:#00b894">+£${cat.total.toLocaleString('en-GB',{minimumFractionDigits:2})}</span>
+      </div>
+      <div class="cat-meta">${cat.count} transaction${cat.count!==1?'s':''} · ${pct}% of income</div>
+      <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${pct}%;background:${colour}"></div></div>
+      <button class="expander-toggle" onclick="this.nextElementSibling.classList.toggle('open'); this.textContent = this.nextElementSibling.classList.contains('open') ? 'Hide transactions ▲' : 'View ${cat.count} transaction${cat.count!==1?'s':''} ▼'">
+        ${expanded ? 'Hide transactions ▲' : `View ${cat.count} transaction${cat.count!==1?'s':''} ▼`}
+      </button>
+      <div class="expander-content ${expanded ? 'open' : ''}">
+        <table class="txn-table">
+          <thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>
+            ${txns.sort((a,b) => (b.date||'').localeCompare(a.date||'')).map(t => `<tr>
+              <td>${fmtDate(t.date)}</td>
+              <td>${escHtml(t.description)}</td>
+              <td style="text-align:right" class="txn-credit">+£${t.amount.toLocaleString('en-GB',{minimumFractionDigits:2})}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="recat-row">
+          <select id="merchant_${cardIdx}">
+            <option value="">Select merchant to re-categorise…</option>
+            ${[...new Set(txns.map(t=>t.description))].sort().map(m => `<option value="${escAttr(m)}">${escHtml(m)}</option>`).join('')}
+          </select>
+          <select id="target_${cardIdx}">
+            <option value="">Select target category…</option>
+            ${(appConfig.allCategories||[]).filter(c=>c!==cat.category).map(c => `<option value="${escAttr(c)}">${getIcon(c)} ${c}</option>`).join('')}
+          </select>
+          <button class="btn btn-sm" onclick="recategoriseCredit('${cardIdx}')">Move ➜</button>
+        </div>
+      </div>
+    `;
+    cardsEl.appendChild(card);
+  });
+}
+
+async function recategoriseCredit(cardIdx) {
+  const merchant = document.getElementById(`merchant_${cardIdx}`).value;
+  const category = document.getElementById(`target_${cardIdx}`).value;
+  if (!merchant || !category) return alert('Select both a merchant and a target category.');
+
+  await fetch('/api/override', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ merchant, category }),
+  });
+
+  const key = merchant.toLowerCase().trim();
+  const namePart = key.includes('|') ? key.split('|')[0].trim() : key;
+  allTransactions.forEach(t => {
+    const tKey = t.description.toLowerCase().trim();
+    if (tKey === key || tKey.includes(namePart)) t.category = category;
+  });
+  applyFilters();
+  loadOverrideInfo();
 }
 
 // ---------------------------------------------------------------------------
