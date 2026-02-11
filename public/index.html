@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>💷 Expense Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    :root {
+      --bg: #f5f6fa;
+      --card: #ffffff;
+      --border: #e8e8e8;
+      --text: #2d3436;
+      --muted: #636e72;
+      --accent: #667eea;
+      --danger: #d63031;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+
+    /* Header */
+    .header { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; padding: 24px 32px; }
+    .header h1 { font-size: 1.6rem; font-weight: 700; }
+    .header p { font-size: 0.9rem; opacity: 0.85; margin-top: 4px; }
+
+    /* Layout */
+    .container { max-width: 1280px; margin: 0 auto; padding: 24px; }
+
+    /* Upload area */
+    .upload-area {
+      background: var(--card); border: 2px dashed var(--border); border-radius: 12px;
+      padding: 40px; text-align: center; cursor: pointer; transition: border-color 0.2s;
+      margin-bottom: 24px;
+    }
+    .upload-area:hover, .upload-area.drag-over { border-color: var(--accent); background: #667eea08; }
+    .upload-area h2 { font-size: 1.2rem; margin-bottom: 8px; }
+    .upload-area p { color: var(--muted); font-size: 0.88rem; }
+    .upload-area input { display: none; }
+    .file-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
+    .file-chip {
+      background: #667eea18; color: var(--accent); border-radius: 20px; padding: 4px 14px;
+      font-size: 0.82rem; font-weight: 500;
+    }
+
+    /* Controls bar */
+    .controls {
+      display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+      background: var(--card); border-radius: 12px; border: 1px solid var(--border);
+      padding: 16px 20px; margin-bottom: 24px;
+    }
+    .controls label { font-size: 0.82rem; color: var(--muted); font-weight: 500; }
+    .controls input[type="date"], .controls input[type="number"] {
+      border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
+      font-size: 0.88rem; outline: none;
+    }
+    .controls input:focus { border-color: var(--accent); }
+    .controls .spacer { flex: 1; }
+    .btn {
+      background: var(--accent); color: #fff; border: none; border-radius: 8px;
+      padding: 8px 18px; font-size: 0.88rem; cursor: pointer; font-weight: 500;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-outline {
+      background: transparent; color: var(--accent); border: 1px solid var(--accent);
+    }
+    .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+    .btn-danger { background: var(--danger); }
+
+    /* Metrics row */
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .metric-card {
+      background: linear-gradient(135deg, #667eea22, #764ba222);
+      border-radius: 12px; padding: 18px 20px; border: 1px solid var(--border);
+    }
+    .metric-card .label { font-size: 0.82rem; color: var(--muted); margin-bottom: 4px; }
+    .metric-card .value { font-size: 1.5rem; font-weight: 700; }
+
+    /* Charts */
+    .charts { display: grid; grid-template-columns: 1fr 1.3fr; gap: 24px; margin-bottom: 24px; }
+    @media (max-width: 768px) { .charts { grid-template-columns: 1fr; } }
+    .chart-card {
+      background: var(--card); border-radius: 12px; border: 1px solid var(--border);
+      padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .chart-card h3 { font-size: 1rem; margin-bottom: 12px; }
+
+    /* Category cards */
+    .cat-section h2 { font-size: 1.15rem; margin-bottom: 8px; }
+    .cat-section .sub { color: var(--muted); font-size: 0.82rem; margin-bottom: 16px; }
+    .cat-card {
+      background: var(--card); border-radius: 12px; border: 1px solid var(--border);
+      padding: 18px 20px; margin-bottom: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .cat-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .cat-icon { font-size: 1.6rem; }
+    .cat-name { font-size: 1.15rem; font-weight: 600; }
+    .cat-amount { font-size: 1.15rem; font-weight: 700; margin-left: auto; }
+    .cat-meta { font-size: 0.82rem; color: var(--muted); margin-bottom: 10px; }
+    .cat-bar-bg { background: #f0f0f0; border-radius: 6px; height: 8px; margin-bottom: 14px; overflow: hidden; }
+    .cat-bar-fill { height: 100%; border-radius: 6px; }
+
+    /* Transactions table */
+    .txn-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .txn-table th { text-align: left; padding: 8px 10px; border-bottom: 2px solid #f0f0f0; color: var(--muted); font-weight: 500; font-size: 0.8rem; }
+    .txn-table td { padding: 8px 10px; border-bottom: 1px solid #f5f5f5; }
+    .txn-table tr:last-child td { border-bottom: none; }
+    .txn-big { color: var(--danger); font-weight: 600; }
+    .txn-credit { color: #00b894; font-weight: 600; }
+    .metric-income { background: linear-gradient(135deg, #00b89422, #55efc422); }
+
+    /* Expander */
+    .expander-toggle {
+      background: none; border: none; color: var(--accent); cursor: pointer;
+      font-size: 0.85rem; padding: 4px 0; font-weight: 500;
+    }
+    .expander-content { display: none; margin-top: 8px; }
+    .expander-content.open { display: block; }
+
+    /* Re-categorise row */
+    .recat-row { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+    .recat-row select {
+      border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
+      font-size: 0.85rem; outline: none; flex: 1; min-width: 140px;
+    }
+    .recat-row select:focus { border-color: var(--accent); }
+
+    /* Big spends */
+    .big-section { margin-top: 24px; }
+    .big-section h2 { font-size: 1.15rem; margin-bottom: 12px; }
+
+    /* Download row */
+    .download-row { display: flex; gap: 12px; margin-top: 24px; margin-bottom: 24px; flex-wrap: wrap; }
+
+    /* Footer */
+    .footer { text-align: center; color: var(--muted); font-size: 0.82rem; padding: 24px; }
+
+    /* Empty state */
+    .empty-state {
+      background: var(--card); border-radius: 12px; border: 1px solid var(--border);
+      padding: 40px; text-align: center; color: var(--muted);
+    }
+    .empty-state h3 { color: var(--text); margin-bottom: 8px; }
+
+    .hidden { display: none; }
+
+    /* Override badge */
+    .override-info {
+      background: var(--card); border-radius: 12px; border: 1px solid var(--border);
+      padding: 12px 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
+    }
+    .override-info span { font-size: 0.85rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>💷 Expense Tracker</h1>
+  <p>Upload bank or credit-card statements to analyse your spending</p>
+</div>
+
+<div class="container">
+  <!-- Upload -->
+  <div class="upload-area" id="uploadArea">
+    <h2>📂 Upload Statements</h2>
+    <p>Drag &amp; drop <strong>CSV</strong> or <strong>Excel</strong> files here, or click to browse.<br>
+       Monzo · Starling · Revolut · HSBC · Amex · Lloyds/Halifax · Generic CSV</p>
+    <input type="file" id="fileInput" multiple accept=".csv,.xlsx,.xls">
+    <div class="file-chips" id="fileChips"></div>
+  </div>
+
+  <!-- Controls (hidden until data loaded) -->
+  <div class="controls hidden" id="controls">
+    <label>From</label>
+    <input type="date" id="dateFrom">
+    <label>To</label>
+    <input type="date" id="dateTo">
+    <div class="spacer"></div>
+    <label>Threshold £</label>
+    <input type="number" id="threshold" value="30" min="0" step="5" style="width:80px">
+    <button class="btn btn-sm" onclick="applyFilters()">Apply</button>
+  </div>
+
+  <!-- Override info -->
+  <div class="override-info hidden" id="overrideInfo">
+    <span id="overrideCount"></span>
+    <button class="btn btn-sm btn-danger" onclick="clearOverrides()">Clear all overrides</button>
+  </div>
+
+  <!-- Metrics -->
+  <div class="metrics hidden" id="metricsRow">
+    <div class="metric-card"><div class="label">Total Spend</div><div class="value" id="mTotal">-</div></div>
+    <div class="metric-card metric-income"><div class="label">Total Income</div><div class="value" id="mIncome">-</div></div>
+    <div class="metric-card"><div class="label">Transactions</div><div class="value" id="mCount">-</div></div>
+    <div class="metric-card"><div class="label">Daily Average</div><div class="value" id="mDaily">-</div></div>
+    <div class="metric-card"><div class="label">Period</div><div class="value" id="mDays">-</div></div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts hidden" id="chartsRow">
+    <div class="chart-card">
+      <h3>📊 Category Split</h3>
+      <canvas id="pieChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>📈 Daily Trend</h3>
+      <canvas id="barChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Category cards -->
+  <div class="cat-section hidden" id="catSection">
+    <h2>🗂️ Spending by Category</h2>
+    <p class="sub">Every category with its transactions. Use the dropdown to re-categorise a merchant.</p>
+    <div id="catCards"></div>
+  </div>
+
+  <!-- Big spends -->
+  <div class="big-section hidden" id="bigSection">
+    <h2 id="bigTitle">🔍 Itemised Transactions Over £30</h2>
+    <div id="bigContent"></div>
+  </div>
+
+  <!-- Income / Credits -->
+  <div class="big-section hidden" id="incomeSection">
+    <h2>💰 Income / Credits</h2>
+    <div id="incomeContent"></div>
+  </div>
+
+  <!-- Downloads -->
+  <div class="download-row hidden" id="downloadRow">
+    <button class="btn btn-outline" onclick="downloadSummary()">📥 Category Summary</button>
+    <button class="btn btn-outline" onclick="downloadAll()">📥 All Transactions</button>
+  </div>
+
+  <div class="footer">💷 Expense Tracker · Categories are keyword-based — edit config/categories.json to customise · Re-categorisations are saved to config/overrides.json</div>
+</div>
+
+<script>
+const PALETTE = ['#667eea','#764ba2','#f7971e','#00b894','#e17055','#0984e3','#6c5ce7','#fdcb6e','#00cec9','#d63031','#e84393','#55efc4'];
+
+let allTransactions = [];
+let filteredTransactions = [];
+let appConfig = {};
+let pieChartInst = null;
+let barChartInst = null;
+
+// ---------------------------------------------------------------------------
+// File upload
+// ---------------------------------------------------------------------------
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+const fileChips = document.getElementById('fileChips');
+
+uploadArea.addEventListener('click', () => fileInput.click());
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadArea.classList.remove('drag-over');
+  fileInput.files = e.dataTransfer.files;
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+async function handleFiles(files) {
+  if (!files.length) return;
+  fileChips.innerHTML = '';
+  for (const f of files) {
+    const chip = document.createElement('span');
+    chip.className = 'file-chip';
+    chip.textContent = f.name;
+    fileChips.appendChild(chip);
+  }
+
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+
+  uploadArea.querySelector('h2').textContent = '⏳ Parsing…';
+  try {
+    const resp = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await resp.json();
+    allTransactions = data.transactions;
+    appConfig = data.config;
+    uploadArea.querySelector('h2').textContent = `✅ ${allTransactions.length} transactions loaded`;
+
+    // Set date range: default to last 1 month
+    if (allTransactions.length) {
+      const dates = allTransactions.map(t => t.date).filter(Boolean).sort();
+      const latestDate = dates[dates.length - 1];
+      const latest = new Date(latestDate + 'T00:00:00');
+      const oneMonthAgo = new Date(latest);
+      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+      const fromStr = oneMonthAgo.toISOString().slice(0, 10);
+      // Clamp to earliest available date
+      const earliest = dates[0];
+      document.getElementById('dateFrom').value = fromStr < earliest ? earliest : fromStr;
+      document.getElementById('dateTo').value = latestDate;
+      document.getElementById('threshold').value = appConfig.itemisedThreshold || 30;
+    }
+
+    applyFilters();
+    loadOverrideInfo();
+  } catch (err) {
+    uploadArea.querySelector('h2').textContent = '❌ Error parsing files';
+    console.error(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Filter & render
+// ---------------------------------------------------------------------------
+function applyFilters() {
+  const from = document.getElementById('dateFrom').value;
+  const to = document.getElementById('dateTo').value;
+  const threshold = parseFloat(document.getElementById('threshold').value) || 30;
+
+  filteredTransactions = allTransactions.filter(t => {
+    if (from && t.date < from) return false;
+    if (to && t.date > to) return false;
+    return true;
+  });
+
+  if (!filteredTransactions.length) {
+    hideAll();
+    return;
+  }
+
+  showAll();
+  renderMetrics(from, to);
+  renderCharts();
+  renderCategoryCards(threshold);
+  renderBigSpends(threshold);
+  renderIncome();
+}
+
+function hideAll() {
+  ['controls','metricsRow','chartsRow','catSection','bigSection','incomeSection','downloadRow'].forEach(id =>
+    document.getElementById(id).classList.add('hidden'));
+}
+
+function showAll() {
+  ['controls','metricsRow','chartsRow','catSection','bigSection','incomeSection','downloadRow'].forEach(id =>
+    document.getElementById(id).classList.remove('hidden'));
+}
+
+// ---------------------------------------------------------------------------
+// Metrics
+// ---------------------------------------------------------------------------
+function renderMetrics(from, to) {
+  const debits = filteredTransactions.filter(t => t.type !== 'credit');
+  const credits = filteredTransactions.filter(t => t.type === 'credit');
+  const totalSpend = debits.reduce((s, t) => s + t.amount, 0);
+  const totalIncome = credits.reduce((s, t) => s + t.amount, 0);
+  const d1 = new Date(from), d2 = new Date(to);
+  const days = Math.max(Math.round((d2 - d1) / 86400000), 1);
+  document.getElementById('mTotal').textContent = `£${totalSpend.toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+  document.getElementById('mIncome').textContent = `£${totalIncome.toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+  document.getElementById('mCount').textContent = debits.length;
+  document.getElementById('mDaily').textContent = `£${(totalSpend/days).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+  document.getElementById('mDays').textContent = `${days} days`;
+}
+
+// ---------------------------------------------------------------------------
+// Charts
+// ---------------------------------------------------------------------------
+function getCategorySummary() {
+  const map = {};
+  for (const t of filteredTransactions) {
+    if (t.type === 'credit') continue; // credits shown separately
+    if (!map[t.category]) map[t.category] = { total: 0, count: 0 };
+    map[t.category].total += t.amount;
+    map[t.category].count++;
+  }
+  return Object.entries(map)
+    .map(([cat, v]) => ({ category: cat, total: Math.round(v.total * 100) / 100, count: v.count }))
+    .sort((a, b) => b.total - a.total);
+}
+
+function renderCharts() {
+  const summary = getCategorySummary();
+  const totalSpend = summary.reduce((s, c) => s + c.total, 0);
+
+  // Pie
+  if (pieChartInst) pieChartInst.destroy();
+  pieChartInst = new Chart(document.getElementById('pieChart'), {
+    type: 'doughnut',
+    data: {
+      labels: summary.map(c => c.category),
+      datasets: [{ data: summary.map(c => c.total), backgroundColor: PALETTE.slice(0, summary.length), borderWidth: 0 }]
+    },
+    options: {
+      cutout: '45%',
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 14 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` £${ctx.raw.toLocaleString('en-GB',{minimumFractionDigits:2})} (${(ctx.raw/totalSpend*100).toFixed(1)}%)`
+          }
+        }
+      }
+    }
+  });
+
+  // Bar – daily stacked (debits only)
+  const dailyMap = {};
+  const cats = summary.map(c => c.category);
+  for (const t of filteredTransactions) {
+    if (!t.date || t.type === 'credit') continue;
+    if (!dailyMap[t.date]) dailyMap[t.date] = {};
+    dailyMap[t.date][t.category] = (dailyMap[t.date][t.category] || 0) + t.amount;
+  }
+  const dates = Object.keys(dailyMap).sort();
+  const datasets = cats.map((cat, i) => ({
+    label: cat,
+    data: dates.map(d => Math.round((dailyMap[d]?.[cat] || 0) * 100) / 100),
+    backgroundColor: PALETTE[i % PALETTE.length],
+  }));
+
+  if (barChartInst) barChartInst.destroy();
+  barChartInst = new Chart(document.getElementById('barChart'), {
+    type: 'bar',
+    data: { labels: dates, datasets },
+    options: {
+      scales: {
+        x: { stacked: true, ticks: { font: { size: 10 } } },
+        y: { stacked: true, ticks: { callback: v => `£${v}` } }
+      },
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: £${ctx.raw.toFixed(2)}` } }
+      }
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Category cards
+// ---------------------------------------------------------------------------
+function renderCategoryCards(threshold) {
+  const summary = getCategorySummary();
+  const totalSpend = summary.reduce((s, c) => s + c.total, 0);
+  const container = document.getElementById('catCards');
+  container.innerHTML = '';
+
+  summary.forEach((cat, idx) => {
+    const pct = totalSpend > 0 ? (cat.total / totalSpend * 100).toFixed(1) : 0;
+    const colour = PALETTE[idx % PALETTE.length];
+    const icon = getIcon(cat.category);
+    const txns = filteredTransactions.filter(t => t.category === cat.category && t.type !== 'credit');
+    const expanded = cat.count <= 15;
+
+    const card = document.createElement('div');
+    card.className = 'cat-card';
+    card.innerHTML = `
+      <div class="cat-header">
+        <span class="cat-icon">${icon}</span>
+        <span class="cat-name">${cat.category}</span>
+        <span class="cat-amount">£${cat.total.toLocaleString('en-GB',{minimumFractionDigits:2})}</span>
+      </div>
+      <div class="cat-meta">${cat.count} transaction${cat.count!==1?'s':''} · ${pct}% of total</div>
+      <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${pct}%;background:${colour}"></div></div>
+      <button class="expander-toggle" onclick="this.nextElementSibling.classList.toggle('open'); this.textContent = this.nextElementSibling.classList.contains('open') ? 'Hide transactions ▲' : 'View ${cat.count} transaction${cat.count!==1?'s':''} ▼'">
+        ${expanded ? 'Hide transactions ▲' : `View ${cat.count} transaction${cat.count!==1?'s':''} ▼`}
+      </button>
+      <div class="expander-content ${expanded ? 'open' : ''}">
+        <table class="txn-table">
+          <thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>
+            ${txns.map(t => `<tr>
+              <td>${fmtDate(t.date)}</td>
+              <td>${escHtml(t.description)}</td>
+              <td style="text-align:right" class="${t.amount > threshold ? 'txn-big' : ''}">£${t.amount.toLocaleString('en-GB',{minimumFractionDigits:2})}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="recat-row">
+          <select id="merchant_${idx}">
+            <option value="">Select merchant to re-categorise…</option>
+            ${[...new Set(txns.map(t=>t.description))].sort().map(m => `<option value="${escAttr(m)}">${escHtml(m)}</option>`).join('')}
+          </select>
+          <select id="target_${idx}">
+            <option value="">Select target category…</option>
+            ${(appConfig.allCategories||[]).filter(c=>c!==cat.category).map(c => `<option value="${escAttr(c)}">${getIcon(c)} ${c}</option>`).join('')}
+          </select>
+          <button class="btn btn-sm" onclick="recategorise(${idx})">Move ➜</button>
+        </div>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+async function recategorise(idx) {
+  const merchant = document.getElementById(`merchant_${idx}`).value;
+  const category = document.getElementById(`target_${idx}`).value;
+  if (!merchant || !category) return alert('Select both a merchant and a target category.');
+
+  await fetch('/api/override', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ merchant, category }),
+  });
+
+  // Update categories locally without re-uploading
+  const key = merchant.toLowerCase().trim();
+  const namePart = key.includes('|') ? key.split('|')[0].trim() : key;
+  allTransactions.forEach(t => {
+    const tKey = t.description.toLowerCase().trim();
+    if (tKey === key || tKey.includes(namePart)) t.category = category;
+  });
+  applyFilters();
+  loadOverrideInfo();
+}
+
+async function reUpload() {
+  if (!fileInput.files.length) return;
+  await handleFiles(fileInput.files);
+}
+
+// ---------------------------------------------------------------------------
+// Big spends
+// ---------------------------------------------------------------------------
+function renderBigSpends(threshold) {
+  const title = document.getElementById('bigTitle');
+  title.textContent = `🔍 Itemised Transactions Over £${threshold}`;
+  const container = document.getElementById('bigContent');
+
+  const big = filteredTransactions.filter(t => t.type !== 'credit' && t.amount > threshold).sort((a,b) => b.amount - a.amount);
+  if (!big.length) {
+    container.innerHTML = `<p style="color:var(--muted)">No transactions exceed £${threshold} in this period. 🎉</p>`;
+    return;
+  }
+
+  const bigTotal = big.reduce((s,t) => s + t.amount, 0);
+  const totalSpend = filteredTransactions.filter(t => t.type !== 'credit').reduce((s,t) => s + t.amount, 0);
+
+  container.innerHTML = `
+    <table class="txn-table">
+      <thead><tr><th>Date</th><th>Category</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>
+        ${big.map(t => `<tr>
+          <td>${fmtDate(t.date)}</td>
+          <td>${getIcon(t.category)} ${t.category}</td>
+          <td>${escHtml(t.description)}</td>
+          <td style="text-align:right" class="txn-big">£${t.amount.toLocaleString('en-GB',{minimumFractionDigits:2})}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p style="margin-top:8px;font-size:0.82rem;color:var(--muted)">
+      <strong>${big.length}</strong> transactions over £${threshold} totalling
+      <strong>£${bigTotal.toLocaleString('en-GB',{minimumFractionDigits:2})}</strong>
+      (${totalSpend > 0 ? (bigTotal/totalSpend*100).toFixed(1) : 0}% of total)
+    </p>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Income / Credits
+// ---------------------------------------------------------------------------
+function renderIncome() {
+  const credits = filteredTransactions.filter(t => t.type === 'credit');
+  const section = document.getElementById('incomeSection');
+  const container = document.getElementById('incomeContent');
+
+  if (!credits.length) {
+    section.classList.add('hidden');
+    return;
+  }
+
+  section.classList.remove('hidden');
+  const totalIncome = credits.reduce((s, t) => s + t.amount, 0);
+
+  container.innerHTML = `
+    <table class="txn-table">
+      <thead><tr><th>Date</th><th>Category</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>
+        ${credits.sort((a,b) => (b.date||'').localeCompare(a.date||'')).map(t => `<tr>
+          <td>${fmtDate(t.date)}</td>
+          <td>${getIcon(t.category)} ${t.category}</td>
+          <td>${escHtml(t.description)}</td>
+          <td style="text-align:right" class="txn-credit">+£${t.amount.toLocaleString('en-GB',{minimumFractionDigits:2})}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p style="margin-top:8px;font-size:0.82rem;color:var(--muted)">
+      <strong>${credits.length}</strong> incoming transaction${credits.length!==1?'s':''} totalling
+      <strong style="color:#00b894">+£${totalIncome.toLocaleString('en-GB',{minimumFractionDigits:2})}</strong>
+    </p>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Downloads
+// ---------------------------------------------------------------------------
+function downloadSummary() {
+  const summary = getCategorySummary();
+  const totalSpend = summary.reduce((s,c) => s + c.total, 0);
+  let csv = 'category,total,count,pct\n';
+  summary.forEach(c => {
+    csv += `"${c.category}",${c.total.toFixed(2)},${c.count},${totalSpend>0?(c.total/totalSpend*100).toFixed(1):'0'}\n`;
+  });
+  downloadBlob(csv, `expense_summary_${document.getElementById('dateFrom').value}_${document.getElementById('dateTo').value}.csv`);
+}
+
+function downloadAll() {
+  let csv = 'date,description,amount,type,category,source_file\n';
+  filteredTransactions.forEach(t => {
+    csv += `${t.date},"${t.description}",${t.amount.toFixed(2)},${t.type || 'debit'},"${t.category}","${t.source_file}"\n`;
+  });
+  downloadBlob(csv, `expense_transactions_${document.getElementById('dateFrom').value}_${document.getElementById('dateTo').value}.csv`);
+}
+
+function downloadBlob(content, filename) {
+  const blob = new Blob([content], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+
+// ---------------------------------------------------------------------------
+// Overrides
+// ---------------------------------------------------------------------------
+async function loadOverrideInfo() {
+  const resp = await fetch('/api/overrides');
+  const data = await resp.json();
+  const count = Object.keys(data).length;
+  const el = document.getElementById('overrideInfo');
+  if (count > 0) {
+    el.classList.remove('hidden');
+    document.getElementById('overrideCount').textContent = `🔄 ${count} merchant override(s) saved`;
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+async function clearOverrides() {
+  await fetch('/api/overrides', { method: 'DELETE' });
+  document.getElementById('overrideInfo').classList.add('hidden');
+  reUpload();
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function getIcon(category) {
+  if (!appConfig.icons) return '';
+  if (category === appConfig.uncategorisedLabel) return appConfig.uncategorisedIcon || '❓';
+  return appConfig.icons[category] || '';
+}
+
+function fmtDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${String(d.getDate()).padStart(2,'0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function escAttr(s) {
+  return s.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+</script>
+</body>
+</html>
