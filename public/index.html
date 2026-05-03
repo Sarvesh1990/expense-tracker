@@ -891,7 +891,6 @@ function newCategory() {
   if (filteredTransactions.length) {
     const threshold = parseFloat(document.getElementById('threshold').value) || 30;
     renderCategoryCards(threshold);
-    renderIncome();
   }
 }
 
@@ -948,51 +947,42 @@ function saveSnapshot() {
   const to = document.getElementById('dateTo').value;
   const threshold = parseFloat(document.getElementById('threshold').value) || 30;
 
-  // Category summary for debits
+  // Build unified per-category summary (debits + credits together)
   const catMap = {};
   for (const t of filteredTransactions) {
-    if (t.type === 'credit') continue;
     if (!catMap[t.category]) catMap[t.category] = [];
-    catMap[t.category].push({ date: t.date, description: t.description, amount: t.amount });
+    catMap[t.category].push({ date: t.date, description: t.description, amount: t.amount, type: t.type });
   }
-  const totalSpend = filteredTransactions.filter(t => t.type !== 'credit').reduce((s, t) => s + t.amount, 0);
+  const totalSpend  = filteredTransactions.filter(t => t.type !== 'credit').reduce((s, t) => s + t.amount, 0);
+  const totalIncome = filteredTransactions.filter(t => t.type === 'credit').reduce((s, t) => s + t.amount, 0);
+
   const categories = Object.entries(catMap)
     .map(([cat, txns]) => {
-      const total = Math.round(txns.reduce((s, t) => s + t.amount, 0) * 100) / 100;
-      return { name: cat, icon: getIcon(cat), total, count: txns.length,
-        pct: totalSpend > 0 ? (total / totalSpend * 100).toFixed(1) : '0',
-        transactions: txns.sort((a, b) => (b.date || '').localeCompare(a.date || '')) };
+      const debits  = Math.round(txns.filter(t => t.type !== 'credit').reduce((s, t) => s + t.amount, 0) * 100) / 100;
+      const credits = Math.round(txns.filter(t => t.type === 'credit').reduce((s, t) => s + t.amount, 0) * 100) / 100;
+      return {
+        name: cat, icon: getIcon(cat),
+        debits, credits,
+        total: debits,   // kept for card compat
+        count: txns.length,
+        debitCount: txns.filter(t => t.type !== 'credit').length,
+        creditCount: txns.filter(t => t.type === 'credit').length,
+        pct: totalSpend > 0 ? (debits / totalSpend * 100).toFixed(1) : '0',
+        transactions: txns.sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+      };
     })
-    .sort((a, b) => b.total - a.total);
-
-  // Income summary
-  const creditMap = {};
-  for (const t of filteredTransactions) {
-    if (t.type !== 'credit') continue;
-    if (!creditMap[t.category]) creditMap[t.category] = [];
-    creditMap[t.category].push({ date: t.date, description: t.description, amount: t.amount });
-  }
-  const totalIncome = filteredTransactions.filter(t => t.type === 'credit').reduce((s, t) => s + t.amount, 0);
-  const income = Object.entries(creditMap)
-    .map(([cat, txns]) => {
-      const total = Math.round(txns.reduce((s, t) => s + t.amount, 0) * 100) / 100;
-      return { name: cat, icon: getIcon(cat), total, count: txns.length,
-        pct: totalIncome > 0 ? (total / totalIncome * 100).toFixed(1) : '0',
-        transactions: txns.sort((a, b) => (b.date || '').localeCompare(a.date || '')) };
-    })
-    .sort((a, b) => b.total - a.total);
+    .sort((a, b) => b.debits - a.debits);
 
   const d1 = new Date(from), d2 = new Date(to);
   const days = Math.max(Math.round((d2 - d1) / 86400000), 1);
-  const debitCount = filteredTransactions.filter(t => t.type !== 'credit').length;
 
   const snap = {
     name: label,
     savedAt: new Date().toISOString(),
     dateFrom: from, dateTo: to, threshold,
-    metrics: { totalSpend: Math.round(totalSpend * 100) / 100, totalIncome: Math.round(totalIncome * 100) / 100, txnCount: debitCount, days },
+    metrics: { totalSpend: Math.round(totalSpend * 100) / 100, totalIncome: Math.round(totalIncome * 100) / 100,
+               txnCount: filteredTransactions.filter(t => t.type !== 'credit').length, days },
     categories,
-    income,
   };
 
   const snaps = loadSnapshots();
@@ -1041,50 +1031,39 @@ function viewSnapshot(i) {
   const saved = new Date(snap.savedAt).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
   const fmt = v => `£${v.toLocaleString('en-GB', {minimumFractionDigits:2})}`;
 
-  const catHtml = snap.categories.map(cat => `
+  const catHtml = snap.categories.map((cat, idx) => {
+    const colour = PALETTE[idx % PALETTE.length];
+    const debitStr = fmt(cat.debits || cat.total || 0);
+    const creditStr = (cat.credits > 0)
+      ? ` <span style="color:#00b894"> &minus; +${fmt(cat.credits)} = ${fmt((cat.debits||cat.total||0) - cat.credits)} net</span>`
+      : '';
+    const metaParts = [];
+    if (cat.debitCount)  metaParts.push(`${cat.debitCount} debit${cat.debitCount!==1?'s':''}`);
+    if (cat.creditCount) metaParts.push(`${cat.creditCount} credit${cat.creditCount!==1?'s':''}`);
+    if (cat.pct > 0)     metaParts.push(`${cat.pct}% of spend`);
+    return `
     <div class="cat-card">
       <div class="cat-header">
         <span class="cat-icon">${cat.icon}</span>
         <span class="cat-name">${escHtml(cat.name)}</span>
-        <span class="cat-amount">${fmt(cat.total)}</span>
+        <span class="cat-amount" style="margin-left:auto">${debitStr}${creditStr}</span>
       </div>
-      <div class="cat-meta">${cat.count} transaction${cat.count!==1?'s':''} · ${cat.pct}% of total</div>
-      <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${cat.pct}%;background:var(--accent)"></div></div>
+      <div class="cat-meta">${metaParts.join(' · ')}</div>
+      <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${cat.pct}%;background:${colour}"></div></div>
       <table class="txn-table" style="margin-top:10px">
         <thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
         <tbody>
           ${cat.transactions.map(t => `<tr>
             <td>${fmtDate(t.date)}</td>
             <td>${escHtml(t.description)}</td>
-            <td style="text-align:right" class="${t.amount > snap.threshold ? 'txn-big' : ''}">£${t.amount.toLocaleString('en-GB',{minimumFractionDigits:2})}</td>
+            <td style="text-align:right" class="${t.type==='credit' ? 'txn-credit' : t.amount > snap.threshold ? 'txn-big' : ''}">
+              ${t.type === 'credit' ? '+' : ''}£${t.amount.toLocaleString('en-GB',{minimumFractionDigits:2})}
+            </td>
           </tr>`).join('')}
         </tbody>
       </table>
-    </div>`).join('');
-
-  const incomeHtml = snap.income.length ? `
-    <div class="snap-modal-section">
-      <h3>💰 Income / Credits</h3>
-      ${snap.income.map(cat => `
-        <div class="cat-card">
-          <div class="cat-header">
-            <span class="cat-icon">${cat.icon}</span>
-            <span class="cat-name">${escHtml(cat.name)}</span>
-            <span class="cat-amount" style="color:#00b894">+${fmt(cat.total)}</span>
-          </div>
-          <div class="cat-meta">${cat.count} transaction${cat.count!==1?'s':''} · ${cat.pct}% of income</div>
-          <table class="txn-table" style="margin-top:10px">
-            <thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
-            <tbody>
-              ${cat.transactions.map(t => `<tr>
-                <td>${fmtDate(t.date)}</td>
-                <td>${escHtml(t.description)}</td>
-                <td style="text-align:right" class="txn-credit">+£${t.amount.toLocaleString('en-GB',{minimumFractionDigits:2})}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>`).join('')}
-    </div>` : '';
+    </div>`;
+  }).join('');
 
   const overlay = document.createElement('div');
   overlay.className = 'snap-modal-overlay';
@@ -1105,7 +1084,6 @@ function viewSnapshot(i) {
         <h3>🗂️ Spending by Category</h3>
         ${catHtml}
       </div>
-      ${incomeHtml}
     </div>`;
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
