@@ -396,16 +396,15 @@ function applyFilters() {
   renderCharts();
   renderCategoryCards(threshold);
   renderBigSpends(threshold);
-  renderIncome();
 }
 
 function hideAll() {
-  ['controls','metricsRow','chartsRow','catSection','bigSection','incomeSection','downloadRow'].forEach(id =>
+  ['controls','metricsRow','chartsRow','catSection','bigSection','downloadRow'].forEach(id =>
     document.getElementById(id).classList.add('hidden'));
 }
 
 function showAll() {
-  ['controls','metricsRow','chartsRow','catSection','bigSection','incomeSection','downloadRow'].forEach(id =>
+  ['controls','metricsRow','chartsRow','catSection','bigSection','downloadRow'].forEach(id =>
     document.getElementById(id).classList.remove('hidden'));
 }
 
@@ -432,14 +431,21 @@ function renderMetrics(from, to) {
 function getCategorySummary() {
   const map = {};
   for (const t of filteredTransactions) {
-    if (t.type === 'credit') continue; // credits shown separately
-    if (!map[t.category]) map[t.category] = { total: 0, count: 0 };
-    map[t.category].total += t.amount;
-    map[t.category].count++;
+    if (!map[t.category]) map[t.category] = { debits: 0, credits: 0, debitCount: 0, creditCount: 0 };
+    if (t.type === 'credit') { map[t.category].credits += t.amount; map[t.category].creditCount++; }
+    else                     { map[t.category].debits  += t.amount; map[t.category].debitCount++;  }
   }
   return Object.entries(map)
-    .map(([cat, v]) => ({ category: cat, total: Math.round(v.total * 100) / 100, count: v.count }))
-    .sort((a, b) => b.total - a.total);
+    .map(([cat, v]) => ({
+      category: cat,
+      total:       Math.round(v.debits  * 100) / 100,  // alias for chart compat
+      debits:      Math.round(v.debits  * 100) / 100,
+      credits:     Math.round(v.credits * 100) / 100,
+      count:       v.debitCount + v.creditCount,
+      debitCount:  v.debitCount,
+      creditCount: v.creditCount,
+    }))
+    .sort((a, b) => b.debits - a.debits);
 }
 
 function renderCharts() {
@@ -504,19 +510,33 @@ function renderCharts() {
 // ---------------------------------------------------------------------------
 function renderCategoryCards(threshold) {
   const summary = getCategorySummary();
-  const totalSpend = summary.reduce((s, c) => s + c.total, 0);
+  const totalDebits = summary.reduce((s, c) => s + c.debits, 0);
   const container = document.getElementById('catCards');
   container.innerHTML = '';
 
   summary.forEach((cat, idx) => {
-    const pct = totalSpend > 0 ? (cat.total / totalSpend * 100).toFixed(1) : 0;
+    const pct = totalDebits > 0 ? (cat.debits / totalDebits * 100).toFixed(1) : 0;
     const colour = PALETTE[idx % PALETTE.length];
     const icon = getIcon(cat.category);
-    const txns = filteredTransactions.filter(t => t.category === cat.category && t.type !== 'credit');
+    const txns = filteredTransactions
+      .filter(t => t.category === cat.category)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const expanded = cat.count <= 15;
     const tableId = `cat-table-${idx}`;
     const countId = `bulk-count-${idx}`;
     const targetId = `target-${idx}`;
+
+    // Header amounts
+    const debitStr = `£${cat.debits.toLocaleString('en-GB',{minimumFractionDigits:2})}`;
+    const creditStr = cat.credits > 0
+      ? `<span style="color:#00b894;font-size:0.95rem;font-weight:700"> &minus; <span style="color:#00b894">+£${cat.credits.toLocaleString('en-GB',{minimumFractionDigits:2})}</span> = £${(cat.debits - cat.credits).toLocaleString('en-GB',{minimumFractionDigits:2})} net</span>`
+      : '';
+
+    // Meta line
+    const metaParts = [];
+    if (cat.debitCount) metaParts.push(`${cat.debitCount} debit${cat.debitCount!==1?'s':''}`);
+    if (cat.creditCount) metaParts.push(`${cat.creditCount} credit${cat.creditCount!==1?'s':''}`);
+    if (totalDebits > 0 && cat.debits > 0) metaParts.push(`${pct}% of spend`);
 
     const card = document.createElement('div');
     card.className = 'cat-card';
@@ -524,9 +544,9 @@ function renderCategoryCards(threshold) {
       <div class="cat-header">
         <span class="cat-icon">${icon}</span>
         <span class="cat-name">${cat.category}</span>
-        <span class="cat-amount">£${cat.total.toLocaleString('en-GB',{minimumFractionDigits:2})}</span>
+        <span class="cat-amount" style="margin-left:auto">${debitStr}${creditStr}</span>
       </div>
-      <div class="cat-meta">${cat.count} transaction${cat.count!==1?'s':''} · ${pct}% of total</div>
+      <div class="cat-meta">${metaParts.join(' · ')}</div>
       <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${pct}%;background:${colour}"></div></div>
       <button class="expander-toggle" onclick="this.nextElementSibling.classList.toggle('open'); this.textContent = this.nextElementSibling.classList.contains('open') ? 'Hide transactions ▲' : 'View ${cat.count} transaction${cat.count!==1?'s':''} ▼'">
         ${expanded ? 'Hide transactions ▲' : `View ${cat.count} transaction${cat.count!==1?'s':''} ▼`}
@@ -547,7 +567,9 @@ function renderCategoryCards(threshold) {
               <td class="txn-check-col"><input type="checkbox" class="txn-check" onclick="event.stopPropagation()" onchange="updateBulkCountForTable('${tableId}', '${countId}'); updateSelectAllForTable('${tableId}')"></td>
               <td>${fmtDate(t.date)}</td>
               <td>${escHtml(t.description)}</td>
-              <td style="text-align:right" class="${t.amount > threshold ? 'txn-big' : ''}">£${t.amount.toLocaleString('en-GB',{minimumFractionDigits:2})}</td>
+              <td style="text-align:right" class="${t.type==='credit' ? 'txn-credit' : t.amount > threshold ? 'txn-big' : ''}">
+                ${t.type === 'credit' ? '+' : ''}£${t.amount.toLocaleString('en-GB',{minimumFractionDigits:2})}
+              </td>
             </tr>`).join('')}
           </tbody>
         </table>
