@@ -343,6 +343,8 @@ async function handleFiles(files) {
     allTransactions = data.transactions;
     // Assign stable indices so bulk moves can reference specific transactions
     allTransactions.forEach((t, i) => { t._id = i; });
+    // Re-apply any saved category moves from previous sessions
+    applyLocalCatOverrides();
     appConfig = data.config;
     uploadArea.querySelector('h2').textContent = `✅ ${allTransactions.length} transactions loaded`;
 
@@ -759,6 +761,20 @@ function bulkMoveFromTable(tableId, targetId) {
 
   const ids = [...checked].map(cb => parseInt(cb.closest('tr').dataset.id));
   ids.forEach(id => { allTransactions[id].category = newCat; });
+
+  // Persist moves to localStorage so they survive page refreshes
+  const ov = getLocalCatOverrides();
+  ids.forEach(id => { ov[allTransactions[id].description.toLowerCase().trim()] = newCat; });
+  localStorage.setItem(LOCAL_CAT_KEY, JSON.stringify(ov));
+  updateOverrideInfo();
+
+  // Best-effort: also save to server (works locally, silently fails on Vercel read-only FS)
+  const descs = [...new Set(ids.map(id => allTransactions[id].description))];
+  descs.forEach(desc => fetch('/api/override', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ merchant: desc, category: newCat })
+  }).catch(() => {}));
+
   applyFilters();
 }
 
@@ -799,23 +815,44 @@ function downloadBlob(content, filename) {
 // ---------------------------------------------------------------------------
 // Overrides
 // ---------------------------------------------------------------------------
-async function loadOverrideInfo() {
-  const resp = await fetch('/api/overrides');
-  const data = await resp.json();
-  const count = Object.keys(data).length;
-  const el = document.getElementById('overrideInfo');
-  if (count > 0) {
-    el.classList.remove('hidden');
-    document.getElementById('overrideCount').textContent = `🔄 ${count} merchant override(s) saved`;
-  } else {
-    el.classList.add('hidden');
-  }
+function loadOverrideInfo() {
+  updateOverrideInfo();
 }
 
 async function clearOverrides() {
   await fetch('/api/overrides', { method: 'DELETE' });
+  localStorage.removeItem(LOCAL_CAT_KEY);
   document.getElementById('overrideInfo').classList.add('hidden');
   reUpload();
+}
+
+// ---------------------------------------------------------------------------
+// Local category overrides (localStorage — persists across refreshes)
+// ---------------------------------------------------------------------------
+const LOCAL_CAT_KEY = 'expense_tracker_cat_overrides';
+
+function getLocalCatOverrides() {
+  try { return JSON.parse(localStorage.getItem(LOCAL_CAT_KEY) || '{}'); } catch { return {}; }
+}
+
+function applyLocalCatOverrides() {
+  const ov = getLocalCatOverrides();
+  if (!Object.keys(ov).length) return;
+  allTransactions.forEach(t => {
+    const k = t.description.toLowerCase().trim();
+    if (ov[k]) t.category = ov[k];
+  });
+}
+
+function updateOverrideInfo() {
+  const localCount = Object.keys(getLocalCatOverrides()).length;
+  const el = document.getElementById('overrideInfo');
+  if (localCount > 0) {
+    el.classList.remove('hidden');
+    document.getElementById('overrideCount').textContent = `🔄 ${localCount} category override(s) saved`;
+  } else {
+    el.classList.add('hidden');
+  }
 }
 
 // ---------------------------------------------------------------------------
