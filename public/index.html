@@ -219,6 +219,12 @@
     <div class="file-chips" id="fileChips"></div>
   </div>
 
+  <!-- Snapshots panel (always visible if snapshots exist) -->
+  <div class="snap-panel hidden" id="snapPanel">
+    <h2>📸 Saved Snapshots</h2>
+    <div id="snapList"></div>
+  </div>
+
   <!-- Controls (hidden until data loaded) -->
   <div class="controls hidden" id="controls">
     <label>From</label>
@@ -284,12 +290,6 @@
     <button class="btn btn-outline" onclick="downloadAll()">📥 All Transactions</button>
     <button class="btn btn-outline" onclick="newCategory()">➕ New Category</button>
     <button class="btn" onclick="saveSnapshot()">💾 Save Snapshot</button>
-  </div>
-
-  <!-- Snapshots panel -->
-  <div class="snap-panel hidden" id="snapPanel">
-    <h2>📸 Saved Snapshots</h2>
-    <div id="snapList"></div>
   </div>
 
   <!-- Snapshot viewer (injected dynamically) -->
