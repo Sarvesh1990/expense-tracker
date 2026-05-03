@@ -282,6 +282,7 @@
   <div class="download-row hidden" id="downloadRow">
     <button class="btn btn-outline" onclick="downloadSummary()">📥 Category Summary</button>
     <button class="btn btn-outline" onclick="downloadAll()">📥 All Transactions</button>
+    <button class="btn btn-outline" onclick="newCategory()">➕ New Category</button>
     <button class="btn" onclick="saveSnapshot()">💾 Save Snapshot</button>
   </div>
 
@@ -343,9 +344,9 @@ async function handleFiles(files) {
     allTransactions = data.transactions;
     // Assign stable indices so bulk moves can reference specific transactions
     allTransactions.forEach((t, i) => { t._id = i; });
-    // Re-apply any saved category moves from previous sessions
-    applyLocalCatOverrides();
     appConfig = data.config;
+    applyCustomCategories();   // merge saved custom categories into appConfig
+    applyLocalCatOverrides();  // re-apply saved category moves
     uploadArea.querySelector('h2').textContent = `✅ ${allTransactions.length} transactions loaded`;
 
     // Set date range: default to last 1 month
@@ -824,6 +825,52 @@ async function clearOverrides() {
   localStorage.removeItem(LOCAL_CAT_KEY);
   document.getElementById('overrideInfo').classList.add('hidden');
   reUpload();
+}
+
+// ---------------------------------------------------------------------------
+// Custom categories (localStorage — persists across refreshes)
+// ---------------------------------------------------------------------------
+const CUSTOM_CATS_KEY = 'expense_tracker_custom_cats';
+
+function getCustomCategories() {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_CATS_KEY) || '[]'); } catch { return []; }
+}
+
+function applyCustomCategories() {
+  const custom = getCustomCategories();
+  custom.forEach(c => {
+    if (!appConfig.allCategories.includes(c.name)) appConfig.allCategories.push(c.name);
+    if (appConfig.icons) appConfig.icons[c.name] = c.icon;
+  });
+}
+
+function newCategory() {
+  const name = prompt('Category name:');
+  if (name === null || !name.trim()) return;
+  const trimmed = name.trim();
+
+  if ((appConfig.allCategories || []).some(c => c.toLowerCase() === trimmed.toLowerCase())) {
+    return alert(`"${trimmed}" already exists.`);
+  }
+
+  const icon = prompt('Icon (emoji):', '📁');
+  if (icon === null) return;
+  const iconStr = icon.trim() || '📁';
+
+  const cats = getCustomCategories();
+  cats.push({ name: trimmed, icon: iconStr });
+  localStorage.setItem(CUSTOM_CATS_KEY, JSON.stringify(cats));
+
+  // Apply to live session
+  if (appConfig.allCategories) appConfig.allCategories.push(trimmed);
+  if (appConfig.icons) appConfig.icons[trimmed] = iconStr;
+
+  // Re-render dropdowns
+  if (filteredTransactions.length) {
+    const threshold = parseFloat(document.getElementById('threshold').value) || 30;
+    renderCategoryCards(threshold);
+    renderIncome();
+  }
 }
 
 // ---------------------------------------------------------------------------
