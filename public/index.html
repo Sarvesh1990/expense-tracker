@@ -235,6 +235,8 @@
     <label>Threshold £</label>
     <input type="number" id="threshold" value="30" min="0" step="5" style="width:80px">
     <button class="btn btn-sm" onclick="applyFilters()">Apply</button>
+    <div class="spacer"></div>
+    <button class="btn btn-sm btn-danger" onclick="clearData()">🗑️ Clear Data</button>
   </div>
 
   <!-- Override info -->
@@ -299,12 +301,68 @@
 
 <script>
 const PALETTE = ['#667eea','#764ba2','#f7971e','#00b894','#e17055','#0984e3','#6c5ce7','#fdcb6e','#00cec9','#d63031','#e84393','#55efc4'];
+const SESSION_KEY = 'expense_tracker_session';
 
 let allTransactions = [];
 let filteredTransactions = [];
 let appConfig = {};
 let pieChartInst = null;
 let barChartInst = null;
+
+// ---------------------------------------------------------------------------
+// Session persistence
+// ---------------------------------------------------------------------------
+function saveSession() {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      allTransactions,
+      appConfig,
+      dateFrom:  document.getElementById('dateFrom').value,
+      dateTo:    document.getElementById('dateTo').value,
+      threshold: document.getElementById('threshold').value,
+    }));
+  } catch (e) {
+    console.warn('Session too large for localStorage:', e.message);
+  }
+}
+
+function restoreSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (!s.allTransactions?.length) return false;
+    allTransactions = s.allTransactions;
+    allTransactions.forEach((t, i) => { t._id = i; });
+    appConfig = s.appConfig || {};
+    applyCustomCategories();
+    applyLocalCatOverrides();
+    if (s.dateFrom)  document.getElementById('dateFrom').value  = s.dateFrom;
+    if (s.dateTo)    document.getElementById('dateTo').value    = s.dateTo;
+    if (s.threshold) document.getElementById('threshold').value = s.threshold;
+    uploadArea.querySelector('h2').textContent = `✅ ${allTransactions.length} transactions loaded`;
+    applyFilters();
+    updateOverrideInfo();
+    return true;
+  } catch (e) {
+    console.warn('Could not restore session:', e.message);
+    return false;
+  }
+}
+
+function clearData() {
+  if (!confirm('Clear all uploaded data and return to the upload screen?')) return;
+  localStorage.removeItem(SESSION_KEY);
+  allTransactions = [];
+  filteredTransactions = [];
+  appConfig = {};
+  if (pieChartInst) { pieChartInst.destroy(); pieChartInst = null; }
+  if (barChartInst) { barChartInst.destroy(); barChartInst = null; }
+  hideAll();
+  uploadArea.querySelector('h2').textContent = '📂 Upload Statements';
+  document.getElementById('fileChips').innerHTML = '';
+  document.getElementById('overrideInfo').classList.add('hidden');
+}
 
 // ---------------------------------------------------------------------------
 // File upload
@@ -365,6 +423,7 @@ async function handleFiles(files) {
     }
 
     applyFilters();
+    saveSession();
     loadOverrideInfo();
   } catch (err) {
     uploadArea.querySelector('h2').textContent = '❌ Error parsing files';
@@ -790,6 +849,7 @@ function bulkMoveFromTable(tableId, targetId) {
   ids.forEach(id => { ov[allTransactions[id].description.toLowerCase().trim()] = newCat; });
   localStorage.setItem(LOCAL_CAT_KEY, JSON.stringify(ov));
   updateOverrideInfo();
+  saveSession();
 
   // Best-effort: also save to server (works locally, silently fails on Vercel read-only FS)
   const descs = [...new Set(ids.map(id => allTransactions[id].description))];
@@ -1089,7 +1149,8 @@ function viewSnapshot(i) {
   document.body.appendChild(overlay);
 }
 
-// Load snapshots on page start
+// Restore previous session and load snapshots on page start
+restoreSession();
 renderSnapshotList();
 
 // ---------------------------------------------------------------------------
