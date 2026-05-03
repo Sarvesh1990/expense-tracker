@@ -17,7 +17,7 @@ const { parse } = require('csv-parse/sync');
 const XLSX = require('xlsx');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(express.json());
