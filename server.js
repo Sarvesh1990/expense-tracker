@@ -127,7 +127,11 @@ function parseDate(str) {
 
 function toISODate(d) {
   if (!d) return null;
-  return d.toISOString().slice(0, 10);
+  // Use local date components to avoid UTC offset shifting the date (e.g. BST off-by-one)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function fmtDate(d) {
@@ -316,7 +320,7 @@ function parseFile(buffer, filename) {
   let records;
 
   if (ext === '.xlsx' || ext === '.xls') {
-    const wb = XLSX.read(buffer, { type: 'buffer' });
+    const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
     records = XLSX.utils.sheet_to_json(ws);
   } else {
